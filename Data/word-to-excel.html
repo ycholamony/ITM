@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Word Table → Excel Converter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --bg: #f0f4f8;
+  --white: #ffffff;
+  --blue-dark: #1a3a6b;
+  --blue-mid: #2d5ea8;
+  --blue-light: #c8d8f0;
+  --blue-header: #4472C4;
+  --yellow: #FFFF00;
+  --yellow-bg: #FFFF99;
+  --border: #aec6e8;
+  --text: #1a1a2e;
+  --muted: #6b7280;
+  --green: #16a34a;
+  --red: #dc2626;
+  --accent: #2563eb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  font-family: 'Segoe UI', 'Khmer OS', Arial, sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+.header {
+  background: var(--blue-dark);
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 64px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.header-logo {
+  background: var(--blue-header);
+  width: 40px; height: 40px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+.header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.2px;
+}
+.header p {
+  font-size: 12px;
+  color: var(--blue-light);
+  margin-top: 1px;
+}
+.offline-pill {
+  margin-left: auto;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #86efac;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex; align-items: center; gap: 6px;
+}
+.dot { width: 7px; height: 7px; background: #86efac; border-radius: 50%; animation: blink 2s infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+
+/* ── Layout ── */
+.wrap { max-width: 1100px; margin: 0 auto; padding: 28px 24px; display: grid; grid-template-columns: 320px 1fr; gap: 24px; align-items: start; }
+@media(max-width:740px){ .wrap { grid-template-columns:1fr; } }
+
+/* ── Cards ── */
+.card {
+  background: var(--white);
+  border: 1px solid #dce6f3;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+.card-head {
+  background: var(--blue-dark);
+  color: #fff;
+  padding: 12px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.card-body { padding: 18px; }
+
+/* ── Drop Zone ── */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+  background: #f7faff;
+}
+.drop-zone:hover, .drop-zone.over {
+  border-color: var(--blue-header);
+  background: #eef3fd;
+}
+.drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop-icon { font-size: 40px; display: block; margin-bottom: 10px; }
+.drop-zone h3 { font-size: 15px; color: var(--blue-dark); margin-bottom: 4px; }
+.drop-zone p { font-size: 12px; color: var(--muted); }
+.drop-tag {
+  display: inline-block;
+  background: var(--blue-light);
+  color: var(--blue-dark);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 10px;
+}
+
+/* ── File List ── */
+.file-list { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.file-item {
+  background: #f7faff;
+  border: 1px solid #dce6f3;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+.fi-icon { font-size: 18px; flex-shrink: 0; }
+.fi-info { flex: 1; min-width: 0; }
+.fi-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.fi-meta { font-size: 11px; color: var(--muted); }
+.fi-status { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; flex-shrink: 0; }
+.s-wait { background: #f3f4f6; color: var(--muted); }
+.s-proc { background: #dbeafe; color: var(--accent); }
+.s-done { background: #dcfce7; color: var(--green); }
+.s-err  { background: #fee2e2; color: var(--red); }
+.rm-btn { background: none; border: none; color: #bbb; cursor: pointer; font-size: 16px; flex-shrink: 0; padding: 0 2px; }
+.rm-btn:hover { color: var(--red); }
+
+/* ── Options ── */
+.opt-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.opt-row:last-child { margin-bottom: 0; }
+.opt-label { font-size: 13px; color: var(--text); }
+.opt-sub { font-size: 11px; color: var(--muted); }
+.toggle { position: relative; width: 38px; height: 20px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; inset: 0; background: #d1d5db; border-radius: 20px; cursor: pointer; transition: .2s; }
+.slider::before { content:''; position:absolute; left:3px; top:3px; width:14px; height:14px; background:#fff; border-radius:50%; transition:.2s; }
+.toggle input:checked + .slider { background: var(--blue-header); }
+.toggle input:checked + .slider::before { transform: translateX(18px); }
+.txt-input {
+  background: #f7faff;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  width: 140px;
+  outline: none;
+}
+.txt-input:focus { border-color: var(--blue-header); }
+
+/* ── Convert Btn ── */
+.btn-convert {
+  width: 100%;
+  background: var(--blue-header);
+  color: #fff;
+  border: none;
+  padding: 13px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 16px;
+  transition: all 0.2s;
+}
+.btn-convert:hover:not(:disabled) { background: var(--blue-mid); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(68,114,196,0.4); }
+.btn-convert:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Progress ── */
+.prog-wrap { margin-top: 12px; height: 5px; background: #e5e7eb; border-radius: 5px; overflow: hidden; display: none; }
+.prog-fill { height: 100%; background: linear-gradient(90deg, var(--blue-header), #7baaf7); border-radius: 5px; transition: width .3s; }
+
+/* ── Right Panel ── */
+.right-stack { display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Preview Table ── */
+.sheet-tabs { display: flex; gap: 6px; padding: 12px 16px; border-bottom: 1px solid #dce6f3; overflow-x: auto; }
+.stab {
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #f0f4f8;
+  border: 1px solid #dce6f3;
+  color: var(--muted);
+  white-space: nowrap;
+  transition: all .15s;
+}
+.stab.active, .stab:hover { background: var(--blue-dark); color: #fff; border-color: var(--blue-dark); }
+
+.tbl-wrap { overflow: auto; max-height: 420px; padding: 0; }
+table.prev {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  min-width: 600px;
+}
+table.prev th {
+  background: var(--blue-header);
+  color: #fff;
+  padding: 8px 10px;
+  text-align: center;
+  border: 1px solid #3a62a0;
+  font-weight: 700;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+table.prev td {
+  padding: 7px 10px;
+  border: 1px solid #d1dff0;
+  vertical-align: top;
+  color: var(--text);
+}
+table.prev tr.section-row td {
+  background: var(--yellow-bg) !important;
+  font-weight: 700;
+  color: #7a5c00;
+}
+table.prev tr:not(.section-row):nth-child(even) td { background: #f0f5fc; }
+table.prev tr:not(.section-row):nth-child(odd)  td { background: #fff; }
+table.prev td:first-child { text-align: center; font-weight: 600; }
+table.prev td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Download ── */
+.dl-box {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  display: none;
+}
+.dl-box h4 { font-size: 15px; color: var(--green); font-weight: 700; }
+.dl-box p  { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.btn-dl {
+  background: var(--green);
+  color: #fff;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all .2s;
+}
+.btn-dl:hover { background: #15803d; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22,163,74,0.35); }
+
+/* ── Log ── */
+.log-box {
+  background: #1e1e2e;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 11.5px;
+  font-family: 'Consolas', monospace;
+  max-height: 100px;
+  overflow-y: auto;
+  color: #a0aec0;
+  display: none;
+}
+.log-ok   { color: #4ade80; }
+.log-err  { color: #f87171; }
+.log-info { color: #60a5fa; }
+.log-line { margin-bottom: 2px; }
+
+/* ── Empty ── */
+.empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+.empty-i { font-size: 44px; display: block; margin-bottom: 12px; opacity: .5; }
+.back {
+  text-decoration: none;
+  color: #04ff99;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">📊</div>
+  <div>
+    <h1>Word Table → Excel Converter</h1>
+    <p>បំលែង Table ពី Word Files ច្រើនទៅ Excel Sheets ដោយរក្សា Format</p>
+  </div>
+  <div class="offline-pill"><span class="dot"></span><a href="../battambang-planning-dashboard.html" class="back"> ត្រឡប់ទៅទំព័រដើម</a></div>
+</div>
+
+<div class="wrap">
+
+  <!-- LEFT PANEL -->
+  <div style="display:flex;flex-direction:column;gap:20px;">
+
+    <!-- Drop -->
+    <div class="card">
+      <div class="card-head">📁 ជ្រើស Word Files</div>
+      <div class="card-body">
+        <div class="drop-zone" id="dz">
+          <input type="file" id="fi" multiple accept=".docx">
+          <span class="drop-icon">📂</span>
+          <h3>ទម្លាក់ Files នៅទីនេះ</h3>
+          <p>ឬចុចដើម្បីជ្រើសរើស</p>
+          <span class="drop-tag">.docx · ច្រើន Files</span>
+        </div>
+        <div class="file-list" id="fileList"></div>
+      </div>
+    </div>
+
+    <!-- Options -->
+    <div class="card">
+      <div class="card-head">⚙️ ការកំណត់</div>
+      <div class="card-body">
+        <div class="opt-row">
+          <div><div class="opt-label">ឈ្មោះ Output File</div></div>
+          <input class="txt-input" id="outName" value="output" placeholder="output">
+        </div>
+        <div class="opt-row">
+          <div>
+            <div class="opt-label">Sheet Name = ឈ្មោះ File</div>
+            <div class="opt-sub">Sheet តាម Word filename</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="useFilename" checked><span class="slider"></span></label>
+        </div>
+        <div class="opt-row">
+          <div>
+            <div class="opt-label">ជ្រើស Table ទី</div>
+            <div class="opt-sub">0 = ទាំងអស់, 1 = ដំបូង, …</div>
+          </div>
+          <input class="txt-input" id="tableIndex" value="0" type="number" min="0" style="width:70px">
+        </div>
+        <div class="opt-row">
+          <div>
+            <div class="opt-label">Header Row មានពណ៌ខៀវ</div>
+            <div class="opt-sub">Format Header ដូចក្នុងរូប</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="styleHeader" checked><span class="slider"></span></label>
+        </div>
+        <div class="opt-row">
+          <div>
+            <div class="opt-label">Section Row ពណ៌លឿង</div>
+            <div class="opt-sub">រក Row merged ឬ bold ជា Section</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="styleSection" checked><span class="slider"></span></label>
+        </div>
+        <button class="btn-convert" id="cvtBtn" onclick="startConvert()" disabled>
+          <span id="btnIco">⚡</span> <span id="btnTxt">បំលែកទៅ Excel</span>
+        </button>
+        <div class="prog-wrap" id="progWrap"><div class="prog-fill" id="progFill"></div></div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-box" id="logBox"></div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-stack">
+
+    <div class="dl-box" id="dlBox">
+      <div>
+        <h4>✅ ត្រៀមរួចរាល់!</h4>
+        <p id="dlDesc">Excel File ត្រូវបានបង្កើត</p>
+      </div>
+      <button class="btn-dl" onclick="doDownload()">⬇️ Download Excel</button>
+    </div>
+
+    <div class="card" id="previewCard">
+      <div class="card-head">👁 Preview</div>
+      <div class="sheet-tabs" id="sheetTabs"></div>
+      <div class="tbl-wrap">
+        <div class="empty" id="emptyMsg">
+          <span class="empty-i">📊</span>
+          <p>បន្ថែម Word Files ហើយចុច "បំលែក"</p>
+        </div>
+        <table class="prev" id="prevTbl" style="display:none"></table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── State ──
+let files = [];
+let previewData = {}; // sheetName -> { headers, rows, sectionFlags }
+let generatedWB = null;
+
+// ── Drag Drop ──
+const dz = document.getElementById('dz');
+const fi = document.getElementById('fi');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); addFiles([...e.dataTransfer.files]); });
+fi.addEventListener('change', () => addFiles([...fi.files]));
+
+function addFiles(newFiles) {
+  newFiles.filter(f => f.name.match(/\.docx$/i)).forEach(f => {
+    if (!files.find(x => x.name === f.name && x.size === f.size))
+      files.push({ file: f, status: 'wait', id: Math.random() });
+  });
+  renderFiles();
+  document.getElementById('cvtBtn').disabled = !files.length;
+}
+
+function removeFile(id) {
+  files = files.filter(f => f.id !== id);
+  renderFiles();
+  document.getElementById('cvtBtn').disabled = !files.length;
+}
+
+function renderFiles() {
+  const el = document.getElementById('fileList');
+  if (!files.length) { el.innerHTML = ''; return; }
+  el.innerHTML = files.map(f => `
+    <div class="file-item">
+      <span class="fi-icon">📄</span>
+      <div class="fi-info">
+        <div class="fi-name" title="${f.file.name}">${f.file.name}</div>
+        <div class="fi-meta">${fmt(f.file.size)}</div>
+      </div>
+      <span class="fi-status s-${f.status}">${slabel(f.status)}</span>
+      <button class="rm-btn" onclick="removeFile(${f.id})">×</button>
+    </div>`).join('');
+}
+
+const slabel = s => ({wait:'រង់ចាំ',proc:'⏳ ...', done:'✓ OK', err:'✗ Error'}[s]);
+const fmt = b => b < 1024 ? b+'B' : b < 1048576 ? (b/1024).toFixed(1)+'KB' : (b/1048576).toFixed(1)+'MB';
+
+// ── Log ──
+function log(msg, type='') {
+  const b = document.getElementById('logBox');
+  b.style.display = 'block';
+  b.innerHTML += `<div class="log-line ${type?'log-'+type:''}">${msg}</div>`;
+  b.scrollTop = b.scrollHeight;
+}
+function clearLog() { const b = document.getElementById('logBox'); b.innerHTML=''; b.style.display='none'; }
+
+// ── Progress ──
+function prog(p) {
+  document.getElementById('progWrap').style.display = 'block';
+  document.getElementById('progFill').style.width = p + '%';
+}
+
+// ── Parse DOCX Tables ──
+async function parseDOCX(file, tableIndex) {
+  const buf = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buf);
+  const xmlStr = await zip.file('word/document.xml').async('text');
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlStr, 'application/xml');
+
+  // Namespaces
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+  const tables = doc.getElementsByTagNameNS(W, 'tbl');
+  if (!tables.length) throw new Error('រក Table មិនឃើញ');
+
+  const results = [];
+  const start = tableIndex > 0 ? tableIndex - 1 : 0;
+  const end   = tableIndex > 0 ? tableIndex     : tables.length;
+
+  for (let ti = start; ti < end && ti < tables.length; ti++) {
+    const tbl = tables[ti];
+    const rows = tbl.getElementsByTagNameNS(W, 'tr');
+    const tableRows = [];
+
+    // Track merged cells
+    const merged = {}; // "r,c" -> value carried forward
+
+    for (let ri = 0; ri < rows.length; ri++) {
+      const cells = rows[ri].getElementsByTagNameNS(W, 'tc');
+      const rowData = [];
+      let col = 0;
+
+      for (let ci = 0; ci < cells.length; ci++) {
+        // skip merged spots
+        while (merged[`${ri},${col}`]) { rowData.push({ v: merged[`${ri},${col}`], m: true }); col++; }
+
+        const cell = cells[ci];
+        const text = getCellText(cell, W);
+        const bg   = getCellBg(cell, W);
+        const bold = isCellBold(cell, W);
+        const tcPr = cell.getElementsByTagNameNS(W, 'tcPr')[0];
+
+        // colspan
+        let colSpan = 1;
+        if (tcPr) {
+          const gridSpan = tcPr.getElementsByTagNameNS(W, 'gridSpan')[0];
+          if (gridSpan) colSpan = parseInt(gridSpan.getAttribute('http://schemas.openxmlformats.org/wordprocessingml/2006/main:val') || gridSpan.textContent || '1');
+        }
+
+        // rowspan via vMerge
+        let rowSpan = 1;
+        if (tcPr) {
+          const vMerge = tcPr.getElementsByTagNameNS(W, 'vMerge')[0];
+          if (vMerge) {
+            const val = vMerge.getAttribute('http://schemas.openxmlformats.org/wordprocessingml/2006/main:val') || '';
+            if (!val || val === '') {
+              // continuation - find value from above
+              rowData.push({ v: merged[`${ri},${col}`] || '', m: true, bg, bold });
+              col += colSpan;
+              continue;
+            }
+          }
+        }
+
+        rowData.push({ v: text, bg, bold, colSpan });
+
+        // fill merged spots for colspan
+        for (let s = 1; s < colSpan; s++) {
+          rowData.push({ v: '', m: true });
+        }
+        col += colSpan;
+      }
+      tableRows.push(rowData);
+    }
+    results.push(tableRows);
+  }
+  return results;
+}
+
+function getCellText(cell, W) {
+  const texts = cell.getElementsByTagNameNS(W, 't');
+  let out = '';
+  for (let t of texts) out += t.textContent;
+  // also get paragraph breaks
+  const paras = cell.getElementsByTagNameNS(W, 'p');
+  if (paras.length > 1) {
+    // multi paragraph cell - join with newline
+    const parts = [];
+    for (let p of paras) {
+      const ts = p.getElementsByTagNameNS(W, 't');
+      let pt = '';
+      for (let t of ts) pt += t.textContent;
+      if (pt) parts.push(pt);
+    }
+    return parts.join('\n');
+  }
+  return out.trim();
+}
+
+function getCellBg(cell, W) {
+  const shd = cell.getElementsByTagNameNS(W, 'shd')[0];
+  if (!shd) return null;
+  const fill = shd.getAttribute('http://schemas.openxmlformats.org/wordprocessingml/2006/main:fill') || shd.getAttribute('w:fill');
+  if (fill && fill !== 'auto' && fill !== 'FFFFFF' && fill !== 'ffffff') return fill.toUpperCase();
+  return null;
+}
+
+function isCellBold(cell, W) {
+  const bs = cell.getElementsByTagNameNS(W, 'b');
+  return bs.length > 0;
+}
+
+// ── Detect Section Row ──
+function isSection(row) {
+  // A row is a "section" if:
+  // 1) First non-empty cell has yellow/light bg AND the rest are empty, OR
+  // 2) Only 1 cell / many merged cells
+  const nonEmpty = row.filter(c => c.v && c.v.trim());
+  if (nonEmpty.length === 1 || (nonEmpty.length <= 2 && row.length > 4)) {
+    const bg = row[0]?.bg || '';
+    if (bg.match(/^(FFFF|FFF0|FFE0|FFEC)/i) || nonEmpty[0]?.bold) return true;
+  }
+  // yellow bg on first cell
+  const firstBg = row[0]?.bg || '';
+  if (firstBg.match(/^(FFFF|FFF0|FFE0|FFEC)/i)) return true;
+  return false;
+}
+
+// ── Convert ──
+async function startConvert() {
+  if (!files.length) return;
+  clearLog();
+  document.getElementById('dlBox').style.display = 'none';
+  document.getElementById('progWrap').style.display = 'block';
+  prog(0);
+
+  const btn = document.getElementById('cvtBtn');
+  btn.disabled = true;
+  document.getElementById('btnTxt').textContent = 'កំពុងដំណើរការ...';
+  document.getElementById('btnIco').textContent = '⏳';
+
+  const useFilename  = document.getElementById('useFilename').checked;
+  const styleHeader  = document.getElementById('styleHeader').checked;
+  const styleSection = document.getElementById('styleSection').checked;
+  const tableIdx     = parseInt(document.getElementById('tableIndex').value) || 0;
+
+  const wb = XLSX.utils.book_new();
+  previewData = {};
+  generatedWB = null;
+
+  let ok = 0, errs = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    f.status = 'proc'; renderFiles();
+    prog(Math.round(i / files.length * 85));
+    log(`📄 ${f.file.name}`, 'info');
+
+    try {
+      const allTables = await parseDOCX(f.file, tableIdx);
+      log(`  └ ${allTables.length} table(s) found`, '');
+
+      for (let ti = 0; ti < allTables.length; ti++) {
+        const tblRows = allTables[ti];
+        if (!tblRows.length) continue;
+
+        // Sheet name
+        let sname = useFilename
+          ? f.file.name.replace(/\.docx$/i,'').replace(/[\\\/\?\*\[\]:]/g,'').substring(0,28)
+          : `Sheet${ok+1}`;
+        if (allTables.length > 1) sname = (sname + `_T${ti+1}`).substring(0,31);
+        let base = sname, c = 2;
+        while (wb.SheetNames.includes(sname)) sname = (base.substring(0,28)+`(${c++})`);
+
+        // Convert to AOA
+        const aoa = tblRows.map(row => row.map(cell => cell.v || ''));
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+        // Style
+        if (styleHeader || styleSection) {
+          applyStyles(ws, tblRows, styleHeader, styleSection);
+        }
+
+        // Column widths
+        if (aoa[0]) {
+          ws['!cols'] = aoa[0].map((_, ci) => {
+            const max = Math.max(...aoa.map(r => (r[ci]||'').toString().length));
+            return { wch: Math.min(Math.max(max + 2, 8), 40) };
+          });
+        }
+
+        XLSX.utils.book_append_sheet(wb, ws, sname);
+
+        // Preview data
+        previewData[sname] = {
+          headers: aoa[0] || [],
+          rows: aoa.slice(1),
+          sections: tblRows.slice(1).map(r => isSection(r))
+        };
+
+        log(`  └ Sheet "${sname}" — ${aoa.length} rows × ${(aoa[0]||[]).length} cols`, 'ok');
+      }
+      f.status = 'done'; ok++;
+    } catch(e) {
+      f.status = 'err'; errs++;
+      log(`  ✗ ${e.message}`, 'err');
+    }
+    renderFiles();
+  }
+
+  prog(100);
+  generatedWB = wb;
+
+  // Download section
+  document.getElementById('dlBox').style.display = 'flex';
+  document.getElementById('dlDesc').textContent =
+    `${ok} File${ok>1?'s':''} → ${wb.SheetNames.length} Sheet${wb.SheetNames.length>1?'s':''}` +
+    (errs ? ` (${errs} error)` : '');
+
+  // Preview
+  showPreview();
+  log(`══ ចប់: ${ok} OK${errs?' '+errs+' errors':''} ══`, ok?'ok':'err');
+
+  btn.disabled = false;
+  document.getElementById('btnTxt').textContent = 'បំលែកម្តងទៀត';
+  document.getElementById('btnIco').textContent = '🔄';
+}
+
+// ── Apply XLSX Styles ──
+function applyStyles(ws, tblRows, doHeader, doSection) {
+  if (!ws['!ref']) return;
+  const range = XLSX.utils.decode_range(ws['!ref']);
+
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    const row = tblRows[R];
+    const rowIsHeader  = doHeader  && R === 0;
+    const rowIsSection = doSection && R > 0 && row && isSection(row);
+
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+
+      let style = {
+        alignment: { vertical: 'center', wrapText: true },
+        border: {
+          top:    { style: 'thin', color: { rgb: 'AEC6E8' } },
+          bottom: { style: 'thin', color: { rgb: 'AEC6E8' } },
+          left:   { style: 'thin', color: { rgb: 'AEC6E8' } },
+          right:  { style: 'thin', color: { rgb: 'AEC6E8' } },
+        }
+      };
+
+      if (rowIsHeader) {
+        style.fill = { patternType: 'solid', fgColor: { rgb: '4472C4' } };
+        style.font = { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 };
+        style.alignment.horizontal = 'center';
+      } else if (rowIsSection) {
+        style.fill = { patternType: 'solid', fgColor: { rgb: 'FFFF99' } };
+        style.font = { bold: true, sz: 11 };
+      } else {
+        // number cells
+        const v = (ws[addr].v || '').toString().replace(/,/g, '');
+        if (v && !isNaN(v) && v !== '') {
+          style.alignment.horizontal = 'right';
+          ws[addr].t = 'n';
+          ws[addr].v = parseFloat(v);
+          if (C > 0) style.numFmt = '#,##0';
+        }
+      }
+
+      ws[addr].s = style;
+    }
+  }
+}
+
+// ── Preview ──
+function showPreview() {
+  const names = Object.keys(previewData);
+  if (!names.length) return;
+
+  const tabs = document.getElementById('sheetTabs');
+  tabs.innerHTML = names.map((n, i) =>
+    `<button class="stab ${i===0?'active':''}" onclick="switchTab('${n}',this)">${n}</button>`
+  ).join('');
+
+  renderPreview(names[0]);
+}
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.stab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderPreview(name);
+}
+
+function renderPreview(name) {
+  const d = previewData[name];
+  const tbl = document.getElementById('prevTbl');
+  const emp = document.getElementById('emptyMsg');
+
+  if (!d) { emp.style.display='block'; tbl.style.display='none'; return; }
+  emp.style.display = 'none';
+  tbl.style.display = 'table';
+
+  // Header
+  let html = '<thead><tr>' + d.headers.map(h => `<th>${esc(h)}</th>`).join('') + '</tr></thead>';
+
+  // Rows (show first 30)
+  html += '<tbody>' + d.rows.slice(0,30).map((row, ri) => {
+    const sec = d.sections[ri];
+    const tds = row.map((c, ci) => {
+      const isNum = ci > 0 && c && !isNaN(c.replace(/,/g,'')) && c.trim()!=='';
+      return `<td class="${isNum?'num':''}">${esc(c)}</td>`;
+    }).join('');
+    return `<tr class="${sec?'section-row':''}">${tds}</tr>`;
+  }).join('') + '</tbody>';
+
+  tbl.innerHTML = html;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Download ──
+function doDownload() {
+  if (!generatedWB) return;
+  const name = (document.getElementById('outName').value || 'output').trim();
+  XLSX.writeFile(generatedWB, name + '.xlsx');
+}
+</script>
+</body>
+</html>

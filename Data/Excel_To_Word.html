@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Excel → Word Converter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --bg: #f0f4f8;
+  --white: #ffffff;
+  --blue-dark: #1a3a6b;
+  --blue-mid: #2d5ea8;
+  --blue-light: #c8d8f0;
+  --blue-header: #4472C4;
+  --yellow-bg: #FFFF99;
+  --border: #aec6e8;
+  --text: #1a1a2e;
+  --muted: #6b7280;
+  --green: #16a34a;
+  --red: #dc2626;
+  --accent: #2563eb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); font-family: 'Segoe UI','Khmer OS',Arial,sans-serif; color: var(--text); min-height: 100vh; }
+
+.header {
+  background: var(--blue-dark); padding: 0 32px;
+  display: flex; align-items: center; gap: 16px; height: 64px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.header-logo { background: var(--blue-header); width:40px; height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:20px; }
+.header h1 { font-size:18px; font-weight:700; color:#fff; }
+.header p  { font-size:12px; color:var(--blue-light); margin-top:1px; }
+.offline-pill { margin-left:auto; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#86efac; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px; }
+.dot { width:7px; height:7px; background:#86efac; border-radius:50%; animation:blink 2s infinite; }
+@keyframes blink { 50%{opacity:.3;} }
+
+.wrap { max-width:1100px; margin:0 auto; padding:28px 24px; display:grid; grid-template-columns:320px 1fr; gap:24px; align-items:start; }
+@media(max-width:740px){.wrap{grid-template-columns:1fr;}}
+
+.card { background:var(--white); border:1px solid #dce6f3; border-radius:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.07); }
+.card-head { background:var(--blue-dark); color:#fff; padding:12px 18px; font-size:13px; font-weight:700; display:flex; align-items:center; gap:8px; }
+.card-body { padding:18px; }
+
+.drop-zone { border:2px dashed var(--border); border-radius:10px; padding:36px 20px; text-align:center; cursor:pointer; position:relative; transition:all .2s; background:#f7faff; }
+.drop-zone:hover,.drop-zone.over { border-color:var(--blue-header); background:#eef3fd; }
+.drop-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+.drop-icon { font-size:42px; display:block; margin-bottom:10px; }
+.drop-zone h3 { font-size:15px; color:var(--blue-dark); margin-bottom:4px; }
+.drop-zone p { font-size:12px; color:var(--muted); }
+.drop-tag { display:inline-block; background:var(--blue-light); color:var(--blue-dark); padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; margin-top:10px; }
+
+/* file item */
+.file-item { background:#f7faff; border:1px solid #dce6f3; border-radius:8px; padding:8px 12px; display:flex; align-items:center; gap:10px; margin-top:8px; }
+.fi-icon { font-size:20px; flex-shrink:0; }
+.fi-info { flex:1; min-width:0; }
+.fi-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fi-meta { font-size:11px; color:var(--muted); }
+
+/* Sheet list */
+.sheet-check-list { display:flex; flex-direction:column; gap:6px; }
+.sheet-check { display:flex; align-items:center; gap:10px; padding:8px 10px; background:#f7faff; border:1px solid #dce6f3; border-radius:8px; font-size:13px; cursor:pointer; transition:background .15s; }
+.sheet-check:hover { background:#eef3fd; }
+.sheet-check input[type=checkbox] { width:16px; height:16px; accent-color:var(--blue-header); cursor:pointer; }
+.sheet-rows { font-size:11px; color:var(--muted); margin-left:auto; }
+
+/* opts */
+.opt-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+.opt-row:last-child { margin-bottom:0; }
+.opt-label { font-size:13px; }
+.opt-sub { font-size:11px; color:var(--muted); }
+.toggle { position:relative; width:38px; height:20px; flex-shrink:0; }
+.toggle input { opacity:0; width:0; height:0; }
+.slider { position:absolute; inset:0; background:#d1d5db; border-radius:20px; cursor:pointer; transition:.2s; }
+.slider::before { content:''; position:absolute; left:3px; top:3px; width:14px; height:14px; background:#fff; border-radius:50%; transition:.2s; }
+.toggle input:checked + .slider { background:var(--blue-header); }
+.toggle input:checked + .slider::before { transform:translateX(18px); }
+.txt-input { background:#f7faff; border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:7px; font-size:12px; outline:none; }
+.txt-input:focus { border-color:var(--blue-header); }
+select.txt-input { width:150px; }
+
+.btn-convert { width:100%; background:var(--blue-header); color:#fff; border:none; padding:13px; border-radius:10px; font-size:15px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:16px; transition:all .2s; }
+.btn-convert:hover:not(:disabled) { background:var(--blue-mid); transform:translateY(-1px); box-shadow:0 4px 14px rgba(68,114,196,0.4); }
+.btn-convert:disabled { opacity:.4; cursor:not-allowed; }
+
+.prog-wrap { margin-top:12px; height:5px; background:#e5e7eb; border-radius:5px; overflow:hidden; display:none; }
+.prog-fill { height:100%; background:linear-gradient(90deg,var(--blue-header),#7baaf7); border-radius:5px; transition:width .3s; }
+
+/* right */
+.right-stack { display:flex; flex-direction:column; gap:20px; }
+
+/* preview table */
+.stabs { display:flex; gap:6px; padding:12px 16px; border-bottom:1px solid #dce6f3; overflow-x:auto; flex-wrap:wrap; }
+.stab { padding:5px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; background:#f0f4f8; border:1px solid #dce6f3; color:var(--muted); white-space:nowrap; transition:all .15s; }
+.stab.active,.stab:hover { background:var(--blue-dark); color:#fff; border-color:var(--blue-dark); }
+
+.tbl-wrap { overflow:auto; max-height:400px; }
+table.prev { border-collapse:collapse; width:100%; font-size:12px; min-width:500px; }
+table.prev th { background:var(--blue-header); color:#fff; padding:8px 10px; text-align:center; border:1px solid #3a62a0; font-weight:700; white-space:nowrap; position:sticky; top:0; z-index:2; }
+table.prev td { padding:7px 10px; border:1px solid #d1dff0; vertical-align:middle; }
+table.prev tr.sec td { background:var(--yellow-bg); font-weight:700; color:#7a5c00; }
+table.prev tr:not(.sec):nth-child(even) td { background:#f0f5fc; }
+table.prev td.num { text-align:right; font-variant-numeric:tabular-nums; }
+
+/* download cards */
+.dl-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; padding:16px; }
+.dl-item { background:#f0fdf4; border:1.5px solid #86efac; border-radius:10px; padding:12px 14px; display:flex; align-items:center; gap:10px; }
+.dl-item .dl-icon { font-size:24px; flex-shrink:0; }
+.dl-item .dl-name { font-size:12px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dl-item .dl-rows { font-size:11px; color:var(--muted); }
+.btn-dl-single { background:var(--green); color:#fff; border:none; padding:6px 12px; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; margin-top:6px; transition:all .2s; white-space:nowrap; }
+.btn-dl-single:hover { background:#15803d; }
+.btn-dl-all { width:100%; background:var(--green); color:#fff; border:none; padding:12px; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; transition:all .2s; margin:0 16px 16px; width:calc(100% - 32px); }
+.btn-dl-all:hover { background:#15803d; transform:translateY(-1px); box-shadow:0 4px 12px rgba(22,163,74,0.35); }
+
+.log-box { background:#1e1e2e; border-radius:8px; padding:10px 14px; font-size:11.5px; font-family:'Consolas',monospace; max-height:100px; overflow-y:auto; color:#a0aec0; display:none; }
+.log-ok   { color:#4ade80; }
+.log-err  { color:#f87171; }
+.log-info { color:#60a5fa; }
+.log-line { margin-bottom:2px; }
+
+.empty { text-align:center; padding:48px 20px; color:var(--muted); }
+.empty-i { font-size:44px; display:block; margin-bottom:12px; opacity:.5; }
+.badge { background:var(--blue-header); color:#fff; width:20px; height:20px; border-radius:50%; font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+
+.mode-cards { display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+.mode-card { display:flex; align-items:center; gap:12px; padding:10px 14px; border:2px solid #dce6f3; border-radius:10px; cursor:pointer; background:#f7faff; transition:all .15s; }
+.mode-card:hover { border-color:var(--blue-header); background:#eef3fd; }
+.mode-card.active { border-color:var(--blue-header); background:rgba(68,114,196,0.08); }
+.mode-icon { font-size:20px; flex-shrink:0; width:36px; text-align:center; }
+.mode-title { font-size:13px; font-weight:700; color:var(--blue-dark); }
+.mode-desc { font-size:11px; color:var(--muted); margin-top:1px; }
+.back {
+  text-decoration: none;
+  color: #04ff99;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">📊</div>
+  <div>
+    <h1>Excel → Word Converter</h1>
+    <p>បំលែង Excel Sheets ទៅ Word Documents ដោយរក្សា Table Format</p>
+  </div>
+  <div class="offline-pill"><span class="dot"></span>​<a href="../battambang-planning-dashboard.html" class="back">ត្រឡប់ទៅទំព័រដើម</a></div>
+</div>
+
+<div class="wrap">
+
+  <!-- LEFT -->
+  <div style="display:flex;flex-direction:column;gap:20px;">
+
+    <!-- Drop -->
+    <div class="card">
+      <div class="card-head">📁 ជ្រើស Excel File</div>
+      <div class="card-body">
+        <div class="drop-zone" id="dz">
+          <input type="file" id="fi" accept=".xlsx,.xls">
+          <span class="drop-icon">📊</span>
+          <h3>ទម្លាក់ Excel File នៅទីនេះ</h3>
+          <p>ឬចុចដើម្បីជ្រើស</p>
+          <span class="drop-tag">.xlsx · .xls</span>
+        </div>
+        <div id="fileInfo"></div>
+      </div>
+    </div>
+
+    <!-- Sheets -->
+    <div class="card" id="sheetsCard" style="display:none;">
+      <div class="card-head">📋 ជ្រើស Sheets <span class="badge" id="sheetCount">0</span></div>
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+          <span style="font-size:12px;color:var(--muted);">ជ្រើស Sheets ដែលចង់បំលែក</span>
+          <button onclick="toggleAll()" style="background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;font-weight:600;" id="toggleAllBtn">ជ្រើសទាំងអស់</button>
+        </div>
+        <div class="sheet-check-list" id="sheetList"></div>
+      </div>
+    </div>
+
+    <!-- Options -->
+    <div class="card" id="optsCard" style="display:none;">
+      <div class="card-head">⚙️ ការកំណត់</div>
+      <div class="card-body">
+        <div class="opt-row" style="align-items:flex-start;">
+          <div><div class="opt-label">Output Mode</div><div class="opt-sub">ជ្រើសរបៀប Output</div></div>
+        </div>
+        <div class="mode-cards" id="modeCards">
+          <label class="mode-card active" onclick="setMode('separate',this)">
+            <input type="radio" name="outMode" value="separate" checked style="display:none">
+            <span class="mode-icon">📄📄📄</span>
+            <div class="mode-title">Word ផ្សេងៗ</div>
+            <div class="mode-desc">Sheet នីមួយៗ → Word File ផ្សេងៗ</div>
+          </label>
+          <label class="mode-card" onclick="setMode('combined',this)">
+            <input type="radio" name="outMode" value="combined" style="display:none">
+            <span class="mode-icon">📄+📄</span>
+            <div class="mode-title">Word File តែមួយ</div>
+            <div class="mode-desc">Sheets ទាំងអស់ → Word File មួយ (Tables ជាប់គ្នា)</div>
+          </label>
+          <label class="mode-card" onclick="setMode('pages',this)">
+            <input type="radio" name="outMode" value="pages" style="display:none">
+            <span class="mode-icon">📋📋</span>
+            <div class="mode-title">Word មួយ · Pages ផ្សេង</div>
+            <div class="mode-desc">Sheet នីមួយៗ → Page ថ្មី ក្នុង Word File តែមួយ</div>
+          </label>
+        </div>
+        <div class="opt-row">
+          <div><div class="opt-label">ឈ្មោះ Output</div><div class="opt-sub">ឈ្មោះ File ឬ Prefix</div></div>
+          <input class="txt-input" id="outName" value="output" style="width:140px;">
+        </div>
+        <div class="opt-row">
+          <div><div class="opt-label">Header Row ពណ៌ខៀវ</div><div class="opt-sub">Row ទី ១ ជា Header</div></div>
+          <label class="toggle"><input type="checkbox" id="styleHeader" checked><span class="slider"></span></label>
+        </div>
+        <div class="opt-row">
+          <div><div class="opt-label">Section Row ពណ៌លឿង</div><div class="opt-sub">Row ដែល merge ឬ bold</div></div>
+          <label class="toggle"><input type="checkbox" id="styleSection" checked><span class="slider"></span></label>
+        </div>
+        <div class="opt-row">
+          <div><div class="opt-label">Page Landscape</div><div class="opt-sub">Rotate ទំព័រ Horizontal</div></div>
+          <label class="toggle"><input type="checkbox" id="landscape" checked><span class="slider"></span></label>
+        </div>
+        <div class="opt-row">
+          <div><div class="opt-label">Table Title = Sheet Name</div><div class="opt-sub">ដាក់ Heading មុន Table</div></div>
+          <label class="toggle"><input type="checkbox" id="addTitle" checked><span class="slider"></span></label>
+        </div>
+
+        <button class="btn-convert" id="cvtBtn" onclick="startConvert()" disabled>
+          <span id="btnIco">⚡</span><span id="btnTxt">បំលែកទៅ Word</span>
+        </button>
+        <div class="prog-wrap" id="progWrap"><div class="prog-fill" id="progFill"></div></div>
+      </div>
+    </div>
+
+    <div class="log-box" id="logBox"></div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-stack">
+
+    <!-- Preview -->
+    <div class="card">
+      <div class="card-head">👁 Preview Excel Data</div>
+      <div class="stabs" id="stabs"></div>
+      <div class="tbl-wrap">
+        <div class="empty" id="emptyMsg">
+          <span class="empty-i">📂</span>
+          <p>បើក Excel File ដើម្បីមើល Preview</p>
+        </div>
+        <table class="prev" id="prevTbl" style="display:none;"></table>
+      </div>
+    </div>
+
+    <!-- Downloads -->
+    <div class="card" id="dlCard" style="display:none;">
+      <div class="card-head">✅ Download Word Files</div>
+      <div class="dl-grid" id="dlGrid"></div>
+      <button class="btn-dl-all" id="dlAllBtn" onclick="downloadAll()" style="display:none;">
+        📦 Download ទាំងអស់ (ZIP)
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── State ───
+let wb = null;
+let sheetsData = {}; // name -> [{cells}]
+let generatedDocs = {}; // name -> Uint8Array
+let currentMode = 'separate';
+
+function setMode(val, el) {
+  currentMode = val;
+  document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ─── Drop / File ───
+const dz = document.getElementById('dz');
+const fi = document.getElementById('fi');
+dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+dz.addEventListener('drop', e=>{e.preventDefault();dz.classList.remove('over'); loadFile(e.dataTransfer.files[0]);});
+fi.addEventListener('change', ()=>loadFile(fi.files[0]));
+
+async function loadFile(file) {
+  if (!file) return;
+  clearAll();
+  log(`📂 Loading: ${file.name}`, 'info');
+  const buf = await file.arrayBuffer();
+  wb = XLSX.read(buf, { type: 'array', cellStyles: true });
+
+  document.getElementById('fileInfo').innerHTML = `
+    <div class="file-item" style="margin-top:10px;">
+      <span class="fi-icon">📊</span>
+      <div class="fi-info">
+        <div class="fi-name">${file.name}</div>
+        <div class="fi-meta">${fmt(file.size)} · ${wb.SheetNames.length} Sheets</div>
+      </div>
+    </div>`;
+
+  // parse all sheets
+  sheetsData = {};
+  wb.SheetNames.forEach(name => {
+    const ws = wb.Sheets[name];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+    sheetsData[name] = aoa;
+  });
+
+  renderSheetList();
+  renderStabs();
+  renderPreview(wb.SheetNames[0]);
+
+  document.getElementById('sheetsCard').style.display='block';
+  document.getElementById('optsCard').style.display='block';
+  document.getElementById('cvtBtn').disabled = false;
+  log(`✓ Loaded — ${wb.SheetNames.length} sheets`, 'ok');
+}
+
+// ─── Sheet checkboxes ───
+function renderSheetList() {
+  const el = document.getElementById('sheetList');
+  document.getElementById('sheetCount').textContent = wb.SheetNames.length;
+  el.innerHTML = wb.SheetNames.map(n => `
+    <label class="sheet-check">
+      <input type="checkbox" class="sc" value="${esc(n)}" checked onchange="updateCvtBtn()">
+      <span>📋 ${esc(n)}</span>
+      <span class="sheet-rows">${(sheetsData[n]||[]).length} rows</span>
+    </label>`).join('');
+}
+
+function toggleAll() {
+  const cbs = document.querySelectorAll('.sc');
+  const anyUnchecked = [...cbs].some(c=>!c.checked);
+  cbs.forEach(c=>c.checked=anyUnchecked);
+  document.getElementById('toggleAllBtn').textContent = anyUnchecked ? 'ដកចេញទាំងអស់' : 'ជ្រើសទាំងអស់';
+  updateCvtBtn();
+}
+
+function getSelectedSheets() {
+  return [...document.querySelectorAll('.sc:checked')].map(c=>c.value);
+}
+
+function updateCvtBtn() {
+  document.getElementById('cvtBtn').disabled = getSelectedSheets().length === 0;
+}
+
+// ─── Preview ───
+function renderStabs() {
+  const tabs = document.getElementById('stabs');
+  tabs.innerHTML = wb.SheetNames.map((n,i)=>`
+    <button class="stab ${i===0?'active':''}" onclick="switchTab('${esc(n)}',this)">${esc(n)}</button>`).join('');
+}
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.stab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  renderPreview(name);
+}
+
+function renderPreview(name) {
+  const aoa = sheetsData[name] || [];
+  const tbl = document.getElementById('prevTbl');
+  const emp = document.getElementById('emptyMsg');
+  if (!aoa.length) { emp.style.display='block'; tbl.style.display='none'; return; }
+
+  emp.style.display='none'; tbl.style.display='table';
+  const maxCols = Math.max(...aoa.map(r=>r.length));
+
+  let html = '';
+  // header
+  if (aoa[0]) {
+    html += '<thead><tr>' + aoa[0].map(h=>`<th>${esc(String(h))}</th>`).join('') + '</tr></thead>';
+  }
+  html += '<tbody>';
+  aoa.slice(1, 31).forEach(row => {
+    const sec = isSectionRow(row, maxCols);
+    const tds = row.map((c,ci)=>{
+      const v = String(c ?? '');
+      const num = ci>0 && v && !isNaN(v.replace(/,/g,'')) && v.trim()!=='';
+      return `<td class="${num?'num':''}">${esc(num ? Number(v.replace(/,/g,'')).toLocaleString() : v)}</td>`;
+    }).join('');
+    html += `<tr class="${sec?'sec':''}">${tds}</tr>`;
+  });
+  html += '</tbody>';
+  tbl.innerHTML = html;
+}
+
+function isSectionRow(row, totalCols) {
+  const nonEmpty = row.filter(c => String(c).trim() !== '');
+  if (nonEmpty.length <= 1 && totalCols > 3) return true;
+  return false;
+}
+
+// ─── Log ───
+function log(msg, type='') {
+  const b = document.getElementById('logBox');
+  b.style.display='block';
+  b.innerHTML += `<div class="log-line ${type?'log-'+type:''}">${msg}</div>`;
+  b.scrollTop = b.scrollHeight;
+}
+function clearLog(){ const b=document.getElementById('logBox'); b.innerHTML=''; b.style.display='none'; }
+
+function prog(p){ document.getElementById('progWrap').style.display='block'; document.getElementById('progFill').style.width=p+'%'; }
+
+function clearAll() {
+  generatedDocs={};
+  document.getElementById('dlCard').style.display='none';
+  document.getElementById('dlGrid').innerHTML='';
+  document.getElementById('dlAllBtn').style.display='none';
+  clearLog();
+}
+
+// ─── Convert ───
+async function startConvert() {
+  const selected = getSelectedSheets();
+  if (!selected.length) return;
+  clearAll();
+
+  const btn = document.getElementById('cvtBtn');
+  btn.disabled = true;
+  document.getElementById('btnTxt').textContent = 'កំពុងដំណើរការ...';
+  document.getElementById('btnIco').textContent = '⏳';
+  prog(0);
+
+  const mode        = currentMode;
+  const outName     = document.getElementById('outName').value.trim() || 'output';
+  const doHeader    = document.getElementById('styleHeader').checked;
+  const doSection   = document.getElementById('styleSection').checked;
+  const doLandscape = document.getElementById('landscape').checked;
+  const doTitle     = document.getElementById('addTitle').checked;
+
+  generatedDocs = {};
+
+  if (mode === 'combined') {
+    // All sheets → one Word, tables back-to-back
+    log(`📝 បង្កើត Word File តែមួយ (Tables ជាប់គ្នា)...`, 'info');
+    try {
+      const docBytes = await buildWordDoc(selected, doHeader, doSection, doLandscape, doTitle, false);
+      const fname = outName + '.docx';
+      generatedDocs[fname] = docBytes;
+      log(`✓ ${fname} — ${selected.length} tables`, 'ok');
+    } catch(e) {
+      log(`✗ ${e.message}`, 'err');
+    }
+  } else if (mode === 'pages') {
+    // All sheets → one Word, each sheet on new page
+    log(`📝 បង្កើត Word File តែមួយ (Sheet នីមួយៗ = Page ថ្មី)...`, 'info');
+    try {
+      const docBytes = await buildWordDoc(selected, doHeader, doSection, doLandscape, doTitle, true);
+      const fname = outName + '.docx';
+      generatedDocs[fname] = docBytes;
+      log(`✓ ${fname} — ${selected.length} sheets → ${selected.length} pages`, 'ok');
+    } catch(e) {
+      log(`✗ ${e.message}`, 'err');
+    }
+  } else {
+    // Each sheet → separate Word file
+    for (let i=0; i<selected.length; i++) {
+      const name = selected[i];
+      prog(Math.round(i/selected.length*90));
+      log(`📝 "${name}" ...`, 'info');
+      try {
+        const docBytes = await buildWordDoc([name], doHeader, doSection, doLandscape, doTitle, false);
+        const safe = name.replace(/[\\\/\:\*\?\"\<\>\|]/g,'_');
+        const fname = selected.length > 1 ? `${outName}_${safe}.docx` : `${outName}.docx`;
+        generatedDocs[fname] = docBytes;
+        log(`✓ ${fname}`, 'ok');
+      } catch(e) {
+        log(`✗ "${name}": ${e.message}`, 'err');
+      }
+    }
+  }
+
+  prog(100);
+  renderDownloads();
+
+  btn.disabled = false;
+  document.getElementById('btnTxt').textContent = 'បំលែកម្តងទៀត';
+  document.getElementById('btnIco').textContent = '🔄';
+  log(`══ ចប់: ${Object.keys(generatedDocs).length} files ══`, 'ok');
+}
+
+// ─── Build DOCX (pure XML/ZIP) ───
+async function buildWordDoc(sheetNames, doHeader, doSection, landscape, addTitle, pageBreakBetween=false) {
+  // We build a valid .docx from scratch using JSZip + raw XML
+  const zip = new JSZip();
+
+  // [Content_Types].xml
+  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml"  ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml"   ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
+</Types>`);
+
+  // _rels/.rels
+  zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+
+  // word/_rels/document.xml.rels
+  zip.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"   Target="styles.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>
+</Relationships>`);
+
+  // word/settings.xml
+  zip.file('word/settings.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:defaultTabStop w:val="720"/>
+</w:settings>`);
+
+  // word/styles.xml
+  zip.file('word/styles.xml', buildStyles());
+
+  // Build body content
+  let bodyXml = '';
+
+  sheetNames.forEach((name, si) => {
+    const aoa = sheetsData[name] || [];
+    if (!aoa.length) return;
+
+    const maxCols = Math.max(...aoa.map(r=>r.length), 1);
+    const colWidthTwips = landscape
+      ? Math.floor(14400 / maxCols)   // landscape ~10 inch content
+      : Math.floor(9360  / maxCols);  // portrait  ~6.5 inch content
+    const colW = Math.max(colWidthTwips, 800);
+
+    // Title paragraph
+    if (addTitle) {
+      bodyXml += `<w:p>
+        <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+        <w:r><w:t>${xmlEsc(name)}</w:t></w:r>
+      </w:p>`;
+    }
+
+    // Table
+    bodyXml += `<w:tbl>
+      <w:tblPr>
+        <w:tblStyle w:val="TableGrid"/>
+        <w:tblW w:w="0" w:type="auto"/>
+        <w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
+        <w:tblBorders>
+          <w:top    w:val="single" w:sz="4" w:space="0" w:color="AEC6E8"/>
+          <w:left   w:val="single" w:sz="4" w:space="0" w:color="AEC6E8"/>
+          <w:bottom w:val="single" w:sz="4" w:space="0" w:color="AEC6E8"/>
+          <w:right  w:val="single" w:sz="4" w:space="0" w:color="AEC6E8"/>
+          <w:insideH w:val="single" w:sz="4" w:space="0" w:color="AEC6E8"/>
+          <w:insideV w:val="single" w:sz="4" w:space="0" w:color="AEC6E8"/>
+        </w:tblBorders>
+      </w:tblPr>
+      <w:tblGrid>${Array.from({length:maxCols},()=>`<w:gridCol w:w="${colW}"/>`).join('')}</w:tblGrid>`;
+
+    aoa.forEach((row, ri) => {
+      const isHeader  = doHeader  && ri === 0;
+      const isSection = doSection && ri > 0 && isSectionRow(row, maxCols);
+
+      bodyXml += `<w:tr>`;
+      if (isHeader) bodyXml += `<w:trPr><w:tblHeader/></w:trPr>`;
+
+      for (let ci = 0; ci < maxCols; ci++) {
+        const val = String(row[ci] ?? '');
+        const isNum = ci > 0 && val.trim() && !isNaN(val.replace(/,/g,'')) && !isSection && !isHeader;
+        const dispVal = isNum ? Number(val.replace(/,/g,'')).toLocaleString() : val;
+
+        let cellShade = '';
+        if (isHeader)  cellShade = `<w:shd w:val="clear" w:color="auto" w:fill="4472C4"/>`;
+        if (isSection) cellShade = `<w:shd w:val="clear" w:color="auto" w:fill="FFFF99"/>`;
+
+        const textColor = isHeader ? `<w:color w:val="FFFFFF"/>` : '';
+        const bold      = (isHeader || isSection) ? `<w:b/>` : '';
+        const jc        = isHeader ? `<w:jc w:val="center"/>` :
+                          isNum    ? `<w:jc w:val="right"/>` : `<w:jc w:val="left"/>`;
+
+        bodyXml += `<w:tc>
+          <w:tcPr>
+            <w:tcW w:w="${colW}" w:type="dxa"/>
+            ${cellShade}
+            <w:tcMar>
+              <w:top    w:w="60"  w:type="dxa"/>
+              <w:left   w:w="100" w:type="dxa"/>
+              <w:bottom w:w="60"  w:type="dxa"/>
+              <w:right  w:w="100" w:type="dxa"/>
+            </w:tcMar>
+          </w:tcPr>
+          <w:p>
+            <w:pPr>${jc}</w:pPr>
+            <w:r>
+              <w:rPr>
+                <w:rFonts w:ascii="Khmer OS Muol Light" w:hAnsi="Arial" w:cs="Khmer OS Muol Light"/>
+                <w:sz w:val="20"/><w:szCs w:val="20"/>
+                ${bold}${textColor}
+              </w:rPr>
+              <w:t xml:space="preserve">${xmlEsc(dispVal)}</w:t>
+            </w:r>
+          </w:p>
+        </w:tc>`;
+      }
+      bodyXml += `</w:tr>`;
+    });
+
+    bodyXml += `</w:tbl>`;
+
+    // page break between sheets (not after last)
+    if (si < sheetNames.length - 1) {
+      if (pageBreakBetween) {
+        // Hard page break — Sheet នីមួយៗ ចាប់ Page ថ្មី
+        bodyXml += `<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>`;
+      } else {
+        // Just a spacing paragraph between tables
+        bodyXml += `<w:p><w:pPr><w:spacing w:after="240"/></w:pPr></w:p>`;
+      }
+    }
+  });
+
+  // Page setup
+  const pgSz = landscape
+    ? `<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>`
+    : `<w:pgSz w:w="11906" w:h="16838"/>`;
+
+  const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+  xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  mc:Ignorable="w14" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+<w:body>
+${bodyXml}
+<w:sectPr>
+  ${pgSz}
+  <w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="708" w:footer="708" w:gutter="0"/>
+</w:sectPr>
+</w:body>
+</w:document>`;
+
+  zip.file('word/document.xml', docXml);
+
+  const arrayBuf = await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+  return new Uint8Array(arrayBuf);
+}
+
+function buildStyles() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults>
+    <w:rPrDefault><w:rPr>
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Khmer OS"/>
+      <w:sz w:val="20"/><w:szCs w:val="20"/>
+      <w:lang w:val="en-US"/>
+    </w:rPr></w:rPrDefault>
+  </w:docDefaults>
+  <w:style w:type="paragraph" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1" w:default="0">
+    <w:name w:val="heading 1"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr>
+    <w:rPr>
+      <w:b/>
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Khmer OS"/>
+      <w:sz w:val="26"/><w:szCs w:val="26"/>
+      <w:color w:val="1a3a6b"/>
+    </w:rPr>
+  </w:style>
+  <w:style w:type="table" w:styleId="TableGrid">
+    <w:name w:val="Table Grid"/>
+    <w:tblPr>
+      <w:tblBorders>
+        <w:top    w:val="single" w:sz="4" w:color="AEC6E8"/>
+        <w:left   w:val="single" w:sz="4" w:color="AEC6E8"/>
+        <w:bottom w:val="single" w:sz="4" w:color="AEC6E8"/>
+        <w:right  w:val="single" w:sz="4" w:color="AEC6E8"/>
+        <w:insideH w:val="single" w:sz="4" w:color="AEC6E8"/>
+        <w:insideV w:val="single" w:sz="4" w:color="AEC6E8"/>
+      </w:tblBorders>
+    </w:tblPr>
+  </w:style>
+</w:styles>`;
+}
+
+// ─── Downloads ───
+function renderDownloads() {
+  const names = Object.keys(generatedDocs);
+  if (!names.length) return;
+  document.getElementById('dlCard').style.display='block';
+  document.getElementById('dlGrid').innerHTML = names.map(n => `
+    <div class="dl-item">
+      <span class="dl-icon">📝</span>
+      <div style="flex:1;min-width:0;">
+        <div class="dl-name" title="${esc(n)}">${esc(n)}</div>
+        <div class="dl-rows">${(generatedDocs[n]?.length/1024).toFixed(1)} KB</div>
+        <button class="btn-dl-single" onclick="downloadOne('${esc(n)}')">⬇️ Download</button>
+      </div>
+    </div>`).join('');
+
+  if (names.length > 1) document.getElementById('dlAllBtn').style.display='flex';
+}
+
+function downloadOne(name) {
+  const bytes = generatedDocs[name];
+  if (!bytes) return;
+  const blob = new Blob([bytes], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+}
+
+async function downloadAll() {
+  const zip = new JSZip();
+  Object.entries(generatedDocs).forEach(([n,b])=>zip.file(n,b));
+  const blob = await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'word_files.zip';
+  a.click();
+}
+
+// ─── Helpers ───
+function xmlEsc(s) {
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+function esc(s) {
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmt(b){ return b<1024?b+'B':b<1048576?(b/1024).toFixed(1)+'KB':(b/1048576).toFixed(1)+'MB'; }
+</script>
+</body>
+</html>
